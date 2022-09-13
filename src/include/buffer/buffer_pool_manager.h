@@ -25,6 +25,10 @@ namespace bustub {
 
 /**
  * BufferPoolManager reads disk pages to and from its internal buffer pool.
+ * buffer pool 维护了一个 frame 数组，每个 frame 有三种状态：
+        free ：初始状态，没有存放任何 page
+        pinned ：存放了 thread 正在使用的 page
+        unpinned ：存放了 page，但 page 已经不再为任何 thread 所使用
  */
 class BufferPoolManager {
  public:
