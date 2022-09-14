@@ -158,7 +158,7 @@ class BufferPoolManager {
 
   /** Number of pages in the buffer pool. */
   size_t pool_size_;
-  /** Array of buffer pool pages. */
+  /** Array of buffer pool pages. pages数组的下标是frame_id*/
   Page *pages_;
   /** Pointer to the disk manager. */
   DiskManager *disk_manager_ __attribute__((__unused__));
@@ -172,5 +172,8 @@ class BufferPoolManager {
   std::list<frame_id_t> free_list_;
   /** This latch protects shared data structures. We recommend updating this comment to describe what it protects. */
   std::mutex latch_;
+
+  /** 获取一个可以用于被加载的页，可以使空闲页，也可以是replacer页*/
+  frame_id_t GetVictimFrameId();
 };
 }  // namespace bustub
