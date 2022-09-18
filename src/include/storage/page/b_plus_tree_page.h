@@ -64,6 +64,10 @@ class BPlusTreePage {
 
  private:
   // member variable, attributes that both internal and leaf page share
+
+  //使用 __attribute__ ((packed)) ，让编译器取消结构在编译过程中的优化对齐,
+  //按照实际占用字节数进行对齐，这样子两边都需要使用 __attribute__ ((packed))取消优化对齐，就不会出现对齐的错位现象。
+
   IndexPageType page_type_ __attribute__((__unused__));
   lsn_t lsn_ __attribute__((__unused__));
   int size_ __attribute__((__unused__));

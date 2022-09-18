@@ -11,6 +11,7 @@
 /**
  * index_iterator.h
  * For range scan of b+ tree
+ * 迭代器的功能就是顺序遍历一颗B+Tree的叶子节点，因为叶子节点是单向数组链表。
  */
 #pragma once
 #include "storage/page/b_plus_tree_leaf_page.h"
@@ -21,9 +22,11 @@ namespace bustub {
 
 INDEX_TEMPLATE_ARGUMENTS
 class IndexIterator {
+  using LeafPage = B_PLUS_TREE_LEAF_PAGE_TYPE;
  public:
   // you may define your own constructor based on your member variables
-  IndexIterator();
+//  IndexIterator();
+  IndexIterator(BufferPoolManager *b,LeafPage *leafNode,int index);
   ~IndexIterator();
 
   bool isEnd();
@@ -38,6 +41,12 @@ class IndexIterator {
 
  private:
   // add your own private member variables here
+  LeafPage *leafNode; //当前正在被iter遍历的leafPage。
+  int curIndex; //当前iter指向的pair，在当前leafPage的下标。
+
+  //因为B+Tree的leafNode是一个leafNode的链表，
+  // 所以需要在当前leafPage遍历结束之后，通过bufferPool拉取下一页
+  BufferPoolManager *bufferPoolManager;
 };
 
 }  // namespace bustub
