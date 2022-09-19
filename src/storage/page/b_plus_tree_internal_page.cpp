@@ -91,7 +91,7 @@ INDEX_TEMPLATE_ARGUMENTS
 ValueType B_PLUS_TREE_INTERNAL_PAGE_TYPE::Lookup(const KeyType &key, const KeyComparator &comparator) const {
   //寻找给定的key在array中符合 K(i)<=key<K(i+1)的i，这个pair的value值就是key所在的internal/leaf page
   //采用二分查找，
-//  assert(GetSize()>=GetMinSize());
+//  assert(GetSize()>1);
   int left = 1;
   int right = GetSize()-1;
   while (left <= right){
@@ -170,7 +170,7 @@ void B_PLUS_TREE_INTERNAL_PAGE_TYPE::MoveHalfTo(BPlusTreeInternalPage *recipient
   //newNode:  kn+1 pn+1|....   注意实际上kn+1是位于第一个pair，无效。但是它可以指示新的node里面的key>= kn+1;
   // 而这个kn+1也会被用于插入到到newNode的父节点，pointer是newNode自己。
   //而在父节点插入的这个Key-Pointer的key，应当是newNode中的下限(newNode.keys>=key)，oldNode中的上限(oldNode.keys<key)
-    int startIndex = GetMinSize();//minSize = （maxSize+1）/2，所以第minsize+1个元素的下标就是GetMinSize()
+    int startIndex = GetMinSize();
     int copy_num = GetSize()-startIndex;
     recipient->CopyNFrom(array+startIndex,copy_num,buffer_pool_manager);
     IncreaseSize(-copy_num);

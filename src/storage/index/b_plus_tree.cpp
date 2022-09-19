@@ -259,7 +259,7 @@ void BPLUSTREE_TYPE::InsertIntoParent(BPlusTreePage *old_node, const KeyType &ke
   int size = parentNode->InsertNodeAfter(old_node->GetPageId(), key, newNodeId);
   LOG_DEBUG("internal node insert over,curSize:%d, maxSize:%d",parentNode->GetSize(),parentNode->GetMaxSize());
 
-  if (size >= parentNode->GetMaxSize()){
+  if (size-1 >= parentNode->GetMaxSize()){//maxSize的意义是有效key的数量；size-1是有效key的数量
     //父节点已经超载，需要分裂！递归一直到不需要分裂的父节点！
     InternalPage *newPNode = Split(parentNode);
     InsertIntoParent(parentNode,newPNode->KeyAt(0),newPNode);
