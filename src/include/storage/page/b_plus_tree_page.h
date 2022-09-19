@@ -71,6 +71,12 @@ class BPlusTreePage {
   IndexPageType page_type_ __attribute__((__unused__));
   lsn_t lsn_ __attribute__((__unused__));
   int size_ __attribute__((__unused__));
+  //最大有效key的数量，所以每个节点的最少key数量为（maxSize+1）/2，+1为了实现向上取整。
+  //如此一来，如果maxSize=8，那么curSize=9的时候，从minSize+1开始，分裂为4个和5个
+  //如果maxsize = 7，那么7/2向上取整为4，minsize=4，当curSize=8的时候分裂为4个和4个
+  //以上计算对于leaf节点没有问题，因为leaf节点没有无效key
+  //但是对于internal节点，我们认为可一个无效key的pair也算在curSize之内，因此每次分裂出的新节点，也可以确保在无效pair+有效pair的大小仍然在>=minSize
+  //eg： 对于internal节点如果maxsize = 7，那么7/2向上取整为4，minsize=4，当curSize=8的时候分裂为4个和4个，分裂出的俩节点第一个均为无效key，但是大小满足大于等于minSize
   int max_size_ __attribute__((__unused__));
   page_id_t parent_page_id_ __attribute__((__unused__));
   page_id_t page_id_ __attribute__((__unused__));

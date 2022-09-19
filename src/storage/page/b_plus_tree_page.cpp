@@ -55,20 +55,34 @@ void BPlusTreePage::SetMaxSize(int size) {max_size_ = size;}
  * 如果是叶子节点，最少要有1个pair；
  * 如果是内部节点，则至少需要使用两个pair对！因为对于内部节点而言，有一个pair的key是无效的。而作为一个树节点，怎么说也得有一个key才行。
  *
- * 对于非根节点，叶子节点和内部节点也要分开看。
- * 内部节点至少要有（（maxsize-1）+1）/2 ，因为第一个pair无效key
- * 叶子节点至少有(maxsize+1)/2,向上取整
- *
+ * 对于非根节点，统一认为return (max_size_+1)/2；
+ * //最大有效key的数量，所以每个节点的最少key数量为（maxSize+1）/2，+1为了实现向上取整。
+//如此一来，如果maxSize=8，那么curSize=9的时候，从minSize+1开始，分裂为4个和5个
+//如果maxsize = 7，那么7/2向上取整为4，minsize=4，当curSize=8的时候分裂为4个和4个
+//以上计算对于leaf节点没有问题，因为leaf节点没有无效key
+//但是对于internal节点，我们认为可一个无效key的pair也算在curSize之内，因此每次分裂出的新节点，也可以确保在无效pair+有效pair的大小仍然在>=minSize
+//eg： 对于internal节点如果maxsize = 7，那么7/2向上取整为4，minsize=4，当curSize=8的时候分裂为4个和4个，分裂出的俩节点第一个均为无效key，但是大小满足大于等于minSize
+
  */
 int BPlusTreePage::GetMinSize() const {
-  if (IsRootPage()){
-    return IsLeafPage()?1:2;
-  }
-  if (IsLeafPage()){
-    return (max_size_+1)/2;//向上取整
-  }
-  //internal page
-  return (max_size_-1+1)/2;//因为第一个pair无效key,+1为了向上取整
+//  if (IsRootPage()){
+//    return IsLeafPage()?1:2;
+//  }
+//return (max_size_+1)/2;//向上取整
+  return max_size_/2;
+  //最大有效key的数量，所以每个节点的最少key数量为（maxSize+1）/2，+1为了实现向上取整。
+  //如此一来，如果maxSize=8，那么curSize=9的时候，从minSize+1开始，分裂为4个和5个
+  //如果maxsize = 7，那么7/2向上取整为4，minsize=4，当curSize=8的时候分裂为4个和4个
+  //以上计算对于leaf节点没有问题，因为leaf节点没有无效key
+  //但是对于internal节点，我们认为可一个无效key的pair也算在curSize之内，因此每次分裂出的新节点，也可以确保在无效pair+有效pair的大小仍然在>=minSize
+  //eg： 对于internal节点如果maxsize = 7，那么7/2向上取整为4，minsize=4，当curSize=8的时候分裂为4个和4个，分裂出的俩节点第一个均为无效key，但是大小满足大于等于minSize
+
+//  if (IsLeafPage()){
+//    return (max_size_+1)/2;//向上取整
+//  }
+//  //internal page
+//  return (max_size_+1)/2;//因为第一个pair无效key,+1为了向上取整
+//  return (max_size_-1+1)/2;//因为第一个pair无效key,+1为了向上取整
 }
 
 /*

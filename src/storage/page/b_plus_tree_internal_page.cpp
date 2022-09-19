@@ -13,6 +13,7 @@
 #include <sstream>
 
 #include "common/exception.h"
+#include "common/logger.h"
 #include "storage/page/b_plus_tree_internal_page.h"
 
 namespace bustub {
@@ -39,11 +40,13 @@ void B_PLUS_TREE_INTERNAL_PAGE_TYPE::Init(page_id_t page_id, page_id_t parent_id
 INDEX_TEMPLATE_ARGUMENTS
 KeyType B_PLUS_TREE_INTERNAL_PAGE_TYPE::KeyAt(int index) const {
   // replace with your own code
+  assert(index >= 0 && index < GetSize());
   return array[index].first;
 }
 
 INDEX_TEMPLATE_ARGUMENTS
 void B_PLUS_TREE_INTERNAL_PAGE_TYPE::SetKeyAt(int index, const KeyType &key) {
+  assert(index >= 0 && index < GetSize());
   array[index].first = key;
 }
 
@@ -56,6 +59,7 @@ INDEX_TEMPLATE_ARGUMENTS
 int B_PLUS_TREE_INTERNAL_PAGE_TYPE::ValueIndex(const ValueType &value) const {
   // 对于内部页面，key有序可以比较，但value无法比较，只能顺序查找;
   //因为是查找value，所以要从0，header开始查找，因为header的value指向最左侧的下一层page
+  //对于internalPage，只是第一个key无效，第一个value还是有效的。
   for (int i = 0; i < GetSize(); ++i) {
     if(array[i].second == value){
       return i;
@@ -69,7 +73,11 @@ int B_PLUS_TREE_INTERNAL_PAGE_TYPE::ValueIndex(const ValueType &value) const {
  * offset)
  */
 INDEX_TEMPLATE_ARGUMENTS
-ValueType B_PLUS_TREE_INTERNAL_PAGE_TYPE::ValueAt(int index) const { return array[index].second ; }
+ValueType B_PLUS_TREE_INTERNAL_PAGE_TYPE::ValueAt(int index) const {
+  LOG_DEBUG("index:%d,curSize:%d,maxSize:%d",index,GetSize(),GetMaxSize());
+  assert(index >= 0 && index < GetSize());
+  return array[index].second ;
+}
 
 /*****************************************************************************
  * LOOKUP
@@ -83,6 +91,7 @@ INDEX_TEMPLATE_ARGUMENTS
 ValueType B_PLUS_TREE_INTERNAL_PAGE_TYPE::Lookup(const KeyType &key, const KeyComparator &comparator) const {
   //寻找给定的key在array中符合 K(i)<=key<K(i+1)的i，这个pair的value值就是key所在的internal/leaf page
   //采用二分查找，
+//  assert(GetSize()>=GetMinSize());
   int left = 1;
   int right = GetSize()-1;
   while (left <= right){
@@ -96,6 +105,7 @@ ValueType B_PLUS_TREE_INTERNAL_PAGE_TYPE::Lookup(const KeyType &key, const KeyCo
     }
   }
   int keyIndex = left -1 ;
+  assert(comparator(KeyAt(keyIndex),key)<=0);
   return ValueAt(keyIndex);
 }
 
@@ -121,13 +131,15 @@ void B_PLUS_TREE_INTERNAL_PAGE_TYPE::PopulateNewRoot(const ValueType &old_value,
  * Insert new_key & new_value pair right after the pair with its value ==
  * old_value
  * 在value=oldValue的pair对之后插入新的一对，一般用于子节点分裂之后，newNode插入到parent中。
+ * 而分裂后的newKV应该紧跟着oldKV
  * @return:  new size after insertion
  */
 INDEX_TEMPLATE_ARGUMENTS
 int B_PLUS_TREE_INTERNAL_PAGE_TYPE::InsertNodeAfter(const ValueType &old_value, const KeyType &new_key,
                                                     const ValueType &new_value) {
   int insertIndex = ValueIndex(old_value)+1;
-  for (int i = GetSize(); i > insertIndex ; ++i) {
+  assert(insertIndex>0);
+  for (int i = GetSize(); i > insertIndex ; --i) {
     array[i] = array[i-1];
   }
   array[insertIndex] = MappingType{new_key,new_value};
@@ -151,14 +163,14 @@ INDEX_TEMPLATE_ARGUMENTS
 void B_PLUS_TREE_INTERNAL_PAGE_TYPE::MoveHalfTo(BPlusTreeInternalPage *recipient,
                                                 BufferPoolManager *buffer_pool_manager) {
   //用于节点分裂的时候，向新节点copy数据
-  //内部节点第一个pair无效，所以复制到recipient的有效key实际上是this->array[1+getMinSize(),end);
+  //内部节点第一个pair无效，所以复制到recipient的有效key实际上是this->array[getMinSize(),end);
   //但是，考虑到B+Tree分裂后的新节点的第一个pair同样是无效key，而且我们需要直到第一个pair的value（指针）的范围，也需要使用这个key来给node的父节点填充，指示（key，pointer）对。
   //所以说我们需要在分裂之后，知道新node中key的最小值，也就是newNode的第一个无效key！
   //oldNode:  k0 p0 | ...| kn pn;
   //newNode:  kn+1 pn+1|....   注意实际上kn+1是位于第一个pair，无效。但是它可以指示新的node里面的key>= kn+1;
   // 而这个kn+1也会被用于插入到到newNode的父节点，pointer是newNode自己。
   //而在父节点插入的这个Key-Pointer的key，应当是newNode中的下限(newNode.keys>=key)，oldNode中的上限(oldNode.keys<key)
-    int startIndex = GetMinSize()+1;
+    int startIndex = GetMinSize();//minSize = （maxSize+1）/2，所以第minsize+1个元素的下标就是GetMinSize()
     int copy_num = GetSize()-startIndex;
     recipient->CopyNFrom(array+startIndex,copy_num,buffer_pool_manager);
     IncreaseSize(-copy_num);
@@ -171,19 +183,20 @@ void B_PLUS_TREE_INTERNAL_PAGE_TYPE::MoveHalfTo(BPlusTreeInternalPage *recipient
 INDEX_TEMPLATE_ARGUMENTS
 void B_PLUS_TREE_INTERNAL_PAGE_TYPE::CopyNFrom(MappingType *items, int size, BufferPoolManager *buffer_pool_manager) {
   //将[items,items+size)复制到当前page的array最后一个之后的空间
+  int oldSize = GetSize();//拷贝之前我自己的size
   std::copy(items,items+size,array+GetSize());
-  for (int i = GetSize(); i < GetSize()+size; ++i) {
+  IncreaseSize(size);
+  for (int i = oldSize; i < GetSize(); ++i) {
     //首先根据pageId，从磁盘中拉取子树节点的page，然后修改子page的parent为自己，原本page是分裂之前的page；
     int child_page_id = ValueAt(i);
     Page *child_page = buffer_pool_manager->FetchPage(child_page_id);
     //拉取到的page强制转换为B+树page
-    BPlusTreeInternalPage *child = reinterpret_cast<BPlusTreeInternalPage*>(child_page);
+    BPlusTreePage *child = reinterpret_cast<BPlusTreePage*>(child_page);
 
     //修改父节点id，并且unpin等待写回。
     child->SetParentPageId(this->GetPageId());
     buffer_pool_manager->UnpinPage(child_page_id, true);
   }
-  IncreaseSize(size);
 }
 
 /*****************************************************************************

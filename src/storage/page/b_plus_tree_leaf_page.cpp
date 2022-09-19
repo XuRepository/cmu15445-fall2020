@@ -12,6 +12,7 @@
 #include <sstream>
 
 #include "common/exception.h"
+#include "common/logger.h"
 #include "common/rid.h"
 #include "storage/page/b_plus_tree_leaf_page.h"
 
@@ -53,7 +54,7 @@ void B_PLUS_TREE_LEAF_PAGE_TYPE::SetNextPageId(page_id_t next_page_id) {
  */
 INDEX_TEMPLATE_ARGUMENTS
 int B_PLUS_TREE_LEAF_PAGE_TYPE::KeyIndex(const KeyType &key, const KeyComparator &comparator) const {
-  //二分法查找，查找结果是array[i].first >= key的第一个i
+  assert(GetSize() >= 0);
   int left = 0;//leaf node，所有pair都是有效的
   int right = GetSize()-1;
   while(left <= right){
@@ -75,6 +76,7 @@ int B_PLUS_TREE_LEAF_PAGE_TYPE::KeyIndex(const KeyType &key, const KeyComparator
 INDEX_TEMPLATE_ARGUMENTS
 KeyType B_PLUS_TREE_LEAF_PAGE_TYPE::KeyAt(int index) const {
   // replace with your own code
+  assert(index >= 0 && index < GetSize());
   return array[index].first;
 }
 
@@ -85,6 +87,7 @@ KeyType B_PLUS_TREE_LEAF_PAGE_TYPE::KeyAt(int index) const {
 INDEX_TEMPLATE_ARGUMENTS
 const MappingType &B_PLUS_TREE_LEAF_PAGE_TYPE::GetItem(int index) {
   // replace with your own code
+  assert(index >= 0 && index < GetSize());
   return array[index];
 }
 
@@ -100,17 +103,16 @@ int B_PLUS_TREE_LEAF_PAGE_TYPE::Insert(const KeyType &key, const ValueType &valu
   //如果是空页面，直接插入
   if (GetSize() == 0){
     array[0]=MappingType{key,value};
-  }
-
-  //1，判断是不是重复key，这里我们只支持不重复key
-  int index = KeyIndex(key, comparator);
-  if (comparator(KeyAt(index),key) == 0){
-    //重复key，不做操作，返回pagesize
+    IncreaseSize(1);
     return GetSize();
   }
 
+  //1，不需要判断是不是重复key，因为我们在调用Insert之前已经判断过是否重复，
+  // 并且这里KeyIndex产生的是>=key的第一个位置，可能已经是getSize位置
+  int index = KeyIndex(key, comparator);
+
   //2,key不重复，说明index位置的key大于给定的key，从这里后移一位，插入
-  for (int i = GetSize(); i > index ; ++i) {
+  for (int i = GetSize(); i > index ; --i) {
     array[i] = array[i-1];
   }
   array[index] = MappingType{key,value};
@@ -157,12 +159,12 @@ INDEX_TEMPLATE_ARGUMENTS
 bool B_PLUS_TREE_LEAF_PAGE_TYPE::Lookup(const KeyType &key, ValueType *value, const KeyComparator &comparator) const {
   int index = KeyIndex(key, comparator);
   //keyIndex返回的是小于key的最大的key的index+1，当然有可能返回的就是最后一个key的index+1，说明key比所有的keys都大，未找到。！
-  if (index == GetSize() ||comparator(KeyAt(index), key) != 0){
-    //说明key不存在，返回false
-    return false;
+  if (index < GetSize() && comparator(KeyAt(index), key) == 0){
+    *value = array[index].second;
+    return true;
   }
-  *value = array[index].second; 
-  return true;
+  //说明key不存在，返回false
+  return false;
 }
 
 /*****************************************************************************
@@ -182,7 +184,7 @@ int B_PLUS_TREE_LEAF_PAGE_TYPE::RemoveAndDeleteRecord(const KeyType &key, const 
     //没有key，返回
     return GetSize();
   }
-  for (int i = index; i < GetSize()-1; ++i) {
+  for (int i = index; i < GetSize()-1; --i) {
     array[i] = array[i+1];
   }
   IncreaseSize(-1);

@@ -25,7 +25,9 @@ BPLUSTREE_TYPE::BPlusTree(std::string name, BufferPoolManager *buffer_pool_manag
       buffer_pool_manager_(buffer_pool_manager),
       comparator_(comparator),
       leaf_max_size_(leaf_max_size),
-      internal_max_size_(internal_max_size) {}
+      internal_max_size_(internal_max_size) {
+          LOG_DEBUG("init B+Tree ok;  leafMaxSize:%d, internalMaxSize:%d",leaf_max_size_,internal_max_size_);
+}
 
 /*
  * Helper function to decide whether current b+tree is empty
@@ -48,15 +50,16 @@ bool BPLUSTREE_TYPE::GetValue(const KeyType &key, std::vector<ValueType> *result
   //查询，从根节点出发，直到找到叶子结点。每次查找都是二分。
   Page *leaf_page = FindLeafPage(key);
   LeafPage *leaf_node = reinterpret_cast<LeafPage *>(leaf_page->GetData());
-  ValueType *value = nullptr;
-  bool ok = leaf_node->Lookup(key, value, comparator_);
+  ValueType value;
+  bool ok = leaf_node->Lookup(key, &value, comparator_);
 
   buffer_pool_manager_->UnpinPage(leaf_page->GetPageId(), false);//一页用完了就unpin掉，方便lru替换
 
+  result->resize(1);
+  (*result)[0] = value;
   if (!ok){    //树中无这个节点
     return false;
   }
-  result->push_back(*value);
   return true;
 }
 
@@ -72,9 +75,11 @@ bool BPLUSTREE_TYPE::GetValue(const KeyType &key, std::vector<ValueType> *result
  */
 INDEX_TEMPLATE_ARGUMENTS
 bool BPLUSTREE_TYPE::Insert(const KeyType &key, const ValueType &value, Transaction *transaction) {
+  LOG_DEBUG("Insert");
   //伪代码在<数据库系统概论>P279
   //1，树为空，建立一个新节点作为根节点。
   if (IsEmpty()){
+    LOG_DEBUG("TREE IS EMPTY");
     StartNewTree(key,value);
     return true;
   }
@@ -89,13 +94,14 @@ bool BPLUSTREE_TYPE::Insert(const KeyType &key, const ValueType &value, Transact
  */
 INDEX_TEMPLATE_ARGUMENTS
 void BPLUSTREE_TYPE::StartNewTree(const KeyType &key, const ValueType &value) {
+  LOG_DEBUG("StartNewTree");
   page_id_t pageId;
   Page *page = buffer_pool_manager_->NewPage(&pageId);
   if (page == nullptr){//新page创建失败
     throw ExceptionType::OUT_OF_MEMORY;
   }
   LeafPage *rootNode = reinterpret_cast<LeafPage*>(page->GetData());
-  rootNode->Init(pageId,INVALID_PAGE_ID);
+  rootNode->Init(pageId,INVALID_PAGE_ID,leaf_max_size_);
   root_page_id_ = pageId;
   UpdateRootPageId();
   //插入KV
@@ -122,13 +128,18 @@ bool BPLUSTREE_TYPE::InsertIntoLeaf(const KeyType &key, const ValueType &value, 
   ValueType searchValue;
   bool is_exit = leafNode->Lookup(key, &searchValue, comparator_);
   if (is_exit){//已存在的key，不添加
+    LOG_DEBUG("Key has exited");
     buffer_pool_manager_->UnpinPage(leafPage->GetPageId(), false);//记住，凡是fetch/new的page，用完都要unpin
     return false;
   }
-  
+  LOG_DEBUG("Key not exit, begin insert");
+
   //插入key到leaf，如果满了就分裂。
   leafNode->Insert(key, value, comparator_);
-  if (leafNode->GetSize() > leaf_max_size_){
+  LOG_DEBUG("insert over,curSize:%d, maxSize:%d",leafNode->GetSize(),leafNode->GetMaxSize());
+
+  if (leafNode->GetSize() >= leafNode->GetMaxSize()){
+    LOG_DEBUG("size:%d ,> maxSize:%d,need split",leafNode->GetSize(),leaf_max_size_);
     LeafPage *newLeafNode = Split(leafNode);
 
     //把分裂出的新节点添加到当前节点的父节点上面，至于父节点的调整，也要在这个函数中完成。
@@ -153,28 +164,34 @@ bool BPLUSTREE_TYPE::InsertIntoLeaf(const KeyType &key, const ValueType &value, 
 INDEX_TEMPLATE_ARGUMENTS
 template <typename N>
 N *BPLUSTREE_TYPE::Split(N *node) {
+  LOG_DEBUG("begain split");
   //TODO Split
   //新建一个节点，把一半KV从node节点迁移到新建的节点。这里N是泛型，这里指leafNode和internalNode
   page_id_t newPageId;
   Page *newPage = buffer_pool_manager_->NewPage(&newPageId);
   N *new_node = reinterpret_cast<N *>(newPage->GetData());
-  new_node->Init(newPageId,node->GetParentPageId());
   //这里对leafPage和internalPage区分看待,因为两者的MoveHalfTo函数参数不同，不能使用一个泛型调用一个函数解决，需要强制类型转换
   if (node->IsLeafPage()){
+    LOG_DEBUG("Splitting: leaf");
+    new_node->Init(newPageId,node->GetParentPageId(),leaf_max_size_);
     LeafPage *oldNode = reinterpret_cast<LeafPage *>(node);
     LeafPage *newNode = reinterpret_cast<LeafPage *>(new_node);
     oldNode->MoveHalfTo(newNode);
     //设置叶子结点的前后连接指针,是一个单向链表
     newNode->SetNextPageId(oldNode->GetNextPageId());
     oldNode->SetNextPageId(newNode->GetPageId());
-
+    LOG_DEBUG("SplitOver; LeafNode,minSize:%d, maxSize:%d, oldNodeSize:%d,newNodeSize:%d,",newNode->GetMinSize(),newNode->GetMaxSize(),oldNode->GetSize(),newNode->GetSize());
     //把oldNode的类型转换为N，保存为new_node返回
     new_node = reinterpret_cast<N *>(newNode);
   }else{//internal node
+    LOG_DEBUG("Splitting: internal");
+    new_node->Init(newPageId,node->GetParentPageId(),internal_max_size_);
+
     InternalPage *oldNode = reinterpret_cast<InternalPage *>(node);
     InternalPage *newNode = reinterpret_cast<InternalPage *>(new_node);
-
     oldNode->MoveHalfTo(newNode,buffer_pool_manager_);
+    LOG_DEBUG("SplitOver; InternalNode,minSize:%d, maxSize:%d, oldNodeSize:%d,newNodeSize:%d,",newNode->GetMinSize(),newNode->GetMaxSize(),oldNode->GetSize(),newNode->GetSize());
+
     new_node = reinterpret_cast<N *>(newNode);
   }
   return new_node;
@@ -192,6 +209,7 @@ N *BPLUSTREE_TYPE::Split(N *node) {
 INDEX_TEMPLATE_ARGUMENTS
 void BPLUSTREE_TYPE::InsertIntoParent(BPlusTreePage *old_node, const KeyType &key, BPlusTreePage *new_node,
                                       Transaction *transaction) {
+  LOG_DEBUG("InsertIntoParent after split");
   //在leaf节点分裂之后，新的node需要在父节点中插入一个Key+Pointer的pair对，用于指示newNode。
     //而在父节点插入的这个Key-Pointer的key，应当是newNode中的下限(newNode.keys>=key)，oldNode中的上限(oldNode.keys<key)
     //这个key就是newNode的第一个节点的key，array[0].first
@@ -200,19 +218,22 @@ void BPLUSTREE_TYPE::InsertIntoParent(BPlusTreePage *old_node, const KeyType &ke
   //如果oldNode已经是root了，没有父节点，那么创建一个父节点，并且父节点指向俩子node;
   // 注意，此时新建的父节点就是root节点！
   if (old_node->IsRootPage()){
+    LOG_DEBUG("split node is root,we need a new Root");
     page_id_t parentId;
     Page *parentPage = buffer_pool_manager_->NewPage(&parentId);
     if (parentPage == nullptr){
       throw ExceptionType::OUT_OF_MEMORY;
     }
     InternalPage *newRoot = reinterpret_cast<InternalPage *>(parentPage->GetData());
-    newRoot->Init(parentId,INVALID_PAGE_ID);
+    newRoot->Init(parentId,INVALID_PAGE_ID,internal_max_size_);
     //我自己这个节点作为 旧root节点分裂后俩节点的父节点，而成为新的root节点；
     newRoot->PopulateNewRoot(old_node->GetPageId(),key,new_node->GetPageId());
     old_node->SetParentPageId(newRoot->GetPageId());
     new_node->SetParentPageId(newRoot->GetPageId());
+    LOG_DEBUG("InsertIntoParent over, parent.curSize:%d, MaxSize:%d",newRoot->GetSize(),newRoot->GetMaxSize());
 
     //更新header page中的root page信息
+    root_page_id_ = newRoot->GetPageId();
     UpdateRootPageId();
 
     //unpin使用过的页面，oldNode在调用该方法的函数中unpin
@@ -221,21 +242,24 @@ void BPLUSTREE_TYPE::InsertIntoParent(BPlusTreePage *old_node, const KeyType &ke
     return;
   }
 
+  LOG_DEBUG("split node is not root,just insert key into parent");
+
   //说明oldNode不是root，只是一个普通的节点，那么就在其父节点中搜索key的位置，然后插入即可！
   Page *pPage = buffer_pool_manager_->FetchPage(parentPageId);
   InternalPage *parentNode = reinterpret_cast<InternalPage *>(pPage->GetData());
-  
-  //在可能进入父节点递归分裂之前，先unpin已经毋庸的newNode
+
+  //在可能进入父节点递归分裂之前，先unpin已经无用的newNode
   new_node->SetParentPageId(parentPageId);
-  buffer_pool_manager_->UnpinPage(new_node->GetPageId(),true);
   page_id_t newNodeId = new_node->GetPageId();
+  buffer_pool_manager_->UnpinPage(new_node->GetPageId(),true);
 
   //因为我们执行插入操作的时候，会拒绝已存在的key插入，所以根据本Tree的实现，只要是能执行到这里，必然key在tree中不存在过，而且不会在任何一个节点存在
   //不需要判断重复啦
   //因为是oldNode分裂出newNode，所以newNode在parent中的位置应该是oldNode.pageId之后。
   int size = parentNode->InsertNodeAfter(old_node->GetPageId(), key, newNodeId);
-  
-  if (size > parentNode->GetMaxSize()){
+  LOG_DEBUG("internal node insert over,curSize:%d, maxSize:%d",parentNode->GetSize(),parentNode->GetMaxSize());
+
+  if (size >= parentNode->GetMaxSize()){
     //父节点已经超载，需要分裂！递归一直到不需要分裂的父节点！
     InternalPage *newPNode = Split(parentNode);
     InsertIntoParent(parentNode,newPNode->KeyAt(0),newPNode);
