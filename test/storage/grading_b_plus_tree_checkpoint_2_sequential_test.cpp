@@ -61,6 +61,7 @@ TEST(BPlusTreeTests, InsertTest1) {
     auto location = pair.second;
     EXPECT_EQ(location.GetPageId(), 0);
     EXPECT_EQ(location.GetSlotNum(), current_key);
+//    LOG_DEBUG("[test] - currentKey:%ld",current_key);
     current_key = current_key + 1;
   }
 

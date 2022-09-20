@@ -116,6 +116,11 @@ class BPlusTree {
   KeyComparator comparator_;
   int leaf_max_size_;
   int internal_max_size_;
+  page_id_t FindLeafBro(BPlusTreePage *pPage);
+  page_id_t FindRightBro(BPlusTreePage *pPage);
+
+  template <class N>
+  bool FindBro(N *node, N *&node2);
 };
 
 }  // namespace bustub

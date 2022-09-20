@@ -51,6 +51,7 @@ void B_PLUS_TREE_LEAF_PAGE_TYPE::SetNextPageId(page_id_t next_page_id) {
 /**
  * Helper method to find the first index i so that array[i].first >= key
  * NOTE: This method is only used when generating index iterator
+ * @return array[i].first >= key的第一个i,也就是大于等于key的第一个元素的下标
  */
 INDEX_TEMPLATE_ARGUMENTS
 int B_PLUS_TREE_LEAF_PAGE_TYPE::KeyIndex(const KeyType &key, const KeyComparator &comparator) const {
@@ -129,7 +130,7 @@ int B_PLUS_TREE_LEAF_PAGE_TYPE::Insert(const KeyType &key, const ValueType &valu
  */
 INDEX_TEMPLATE_ARGUMENTS
 void B_PLUS_TREE_LEAF_PAGE_TYPE::MoveHalfTo(BPlusTreeLeafPage *recipient) {
-  int startIndex = GetMinSize();//leaf节点有效key从0开始，GetMinSize()作为下标实际上是第minSize+1个元素了
+  int startIndex = (GetMaxSize())/2;//leaf节点有效key从0开始，从一半元素位置开始分裂
   int copy_size = GetSize() - startIndex;
   recipient->CopyNFrom(array+startIndex,copy_size);
   IncreaseSize(-copy_size);
@@ -180,15 +181,17 @@ INDEX_TEMPLATE_ARGUMENTS
 int B_PLUS_TREE_LEAF_PAGE_TYPE::RemoveAndDeleteRecord(const KeyType &key, const KeyComparator &comparator) {
   int index = KeyIndex(key, comparator);
   //keyIndex返回的是小于key的最大的key的index+1，当然有可能返回的就是最后一个key的index+1，说明key比所有的keys都大，未找到。！
-  if (index == GetSize() || comparator(KeyAt(index),key) != 0){
-    //没有key，返回
-    return GetSize();
+  if (index < GetSize() && comparator(KeyAt(index),key) == 0){
+   //找到key，删除
+   for (int i = index; i < GetSize()-1; ++i) {
+     array[i] = array[i+1];
+   }
+   IncreaseSize(-1);
+   return GetSize();
   }
-  for (int i = index; i < GetSize()-1; --i) {
-    array[i] = array[i+1];
-  }
-  IncreaseSize(-1);
+  //没有key，返回
   return GetSize();
+
 }
 
 /*****************************************************************************
@@ -199,7 +202,12 @@ int B_PLUS_TREE_LEAF_PAGE_TYPE::RemoveAndDeleteRecord(const KeyType &key, const 
  * to update the next_page id in the sibling page
  */
 INDEX_TEMPLATE_ARGUMENTS
-void B_PLUS_TREE_LEAF_PAGE_TYPE::MoveAllTo(BPlusTreeLeafPage *recipient) {}
+void B_PLUS_TREE_LEAF_PAGE_TYPE::MoveAllTo(BPlusTreeLeafPage *recipient) {
+  recipient->CopyNFrom(array,GetSize());
+  SetSize(0);
+  //不要忘记更新接受者的nextPage，我们移动的规则是从后者移动到前者
+  recipient->SetNextPageId(GetNextPageId());
+}
 
 /*****************************************************************************
  * REDISTRIBUTE
@@ -208,13 +216,23 @@ void B_PLUS_TREE_LEAF_PAGE_TYPE::MoveAllTo(BPlusTreeLeafPage *recipient) {}
  * Remove the first key & value pair from this page to "recipient" page.
  */
 INDEX_TEMPLATE_ARGUMENTS
-void B_PLUS_TREE_LEAF_PAGE_TYPE::MoveFirstToEndOf(BPlusTreeLeafPage *recipient) {}
+void B_PLUS_TREE_LEAF_PAGE_TYPE::MoveFirstToEndOf(BPlusTreeLeafPage *recipient) {
+  recipient->CopyLastFrom(GetItem(0));
+  IncreaseSize(-1);
+  //本节点第一个元素被拿走了，其他元素补上来
+  for (int i = 0; i < GetSize(); ++i) {
+    array[i] = array[i+1];
+  }
+}
 
 /*
  * Copy the item into the end of my item list. (Append item to my array)
  */
 INDEX_TEMPLATE_ARGUMENTS
-void B_PLUS_TREE_LEAF_PAGE_TYPE::CopyLastFrom(const MappingType &item) {}
+void B_PLUS_TREE_LEAF_PAGE_TYPE::CopyLastFrom(const MappingType &item) {
+  array[GetSize()] = item;
+  IncreaseSize(1);
+}
 
 /*
  * Remove the last key & value pair from this page to "recipient" page.

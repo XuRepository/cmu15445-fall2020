@@ -70,13 +70,13 @@ int BPlusTreePage::GetMinSize() const {
   //每个page所应当拥有的最小pair对数量！
   //maxSize的含义是每个节点应当拥有的有效pair对数量。
 //  return max_size_/2;
-//  if (IsRootPage()){
-//    return IsLeafPage()?1:2;
-//  }
+  if (IsRootPage()){
+    return IsLeafPage()?1:2;
+  }
     if (IsLeafPage()){
       return (max_size_)/2;//
     }else{
-      return (max_size_+1)/2;//internal节点 ，向上取整可以保证每个节点在奇数偶数的情况下都可以有>=minSize的大小
+      return (max_size_)/2;//internal节点 ，向上取整可以保证每个节点在奇数偶数的情况下都可以有>=minSize的大小
     }
 //    return max_size_/2;
 }
