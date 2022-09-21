@@ -293,10 +293,13 @@ void BPLUSTREE_TYPE::Remove(const KeyType &key, Transaction *transaction) {
   //3，查找key的index，删除key；单纯删除子节点的key，不需要调整父节点，除非子节点需要合并/重新分配
   int size = leafNode->RemoveAndDeleteRecord(key, comparator_);
   //4，检查是否需要合并或者重新分配，
+  bool node_del = false;//接住CoalesceOrRedistribute的返回结果，true表示该node在CoalesceOrRedistribute被删除！不需要在此unpin
   if (size < leafNode->GetMinSize()){
-    CoalesceOrRedistribute(leafNode,transaction);//will unpin leafNode
+    node_del = CoalesceOrRedistribute(leafNode,transaction);//will unpin leafNode
   }
-  buffer_pool_manager_->UnpinPage(leafPage->GetPageId(), true);//有元素被删除
+  if (!node_del){
+    buffer_pool_manager_->UnpinPage(leafPage->GetPageId(), true);//有元素被删除
+  }
 }
 
 /*
@@ -344,9 +347,12 @@ bool BPLUSTREE_TYPE::CoalesceOrRedistribute(N *node, Transaction *transaction) {
       std::swap(node,node2);
     }
     int removeIndex = parentNode->ValueIndex(node->GetPageId());//node节点将被删除，记录下父节点指向node的指针位置，这个pair也要删除
-    Coalesce(&node2,&node,&parentNode,removeIndex,transaction);//node node2已经unpin
-    buffer_pool_manager_->UnpinPage(parentNode->GetPageId(), true);
-    return true;//node需要删除
+    bool parent_del = Coalesce(&node2,&node,&parentNode,removeIndex,transaction);//node node2已经unpin
+    if (!parent_del){
+      //父节点未被删除，那么需要unpin；如果父节点被删除，就不需要unpin了
+      buffer_pool_manager_->UnpinPage(parentNode->GetPageId(), true);
+    }
+    return true;//node已经删除
   }
 
   //5，如果不能合并，就意味着兄弟节点的大小是大于minSize+1的，可以借节点。
@@ -503,7 +509,6 @@ void BPLUSTREE_TYPE::Redistribute(N *neighbor_node, N *node, int index) {
     neighbor_node = reinterpret_cast<N *>(broNd);
   }
   buffer_pool_manager_->UnpinPage(node->GetParentPageId(), true);
-  buffer_pool_manager_->UnpinPage(node->GetPageId(), true);
   buffer_pool_manager_->UnpinPage(neighbor_node->GetPageId(), true);
 
 }
@@ -547,7 +552,7 @@ bool BPLUSTREE_TYPE::AdjustRoot(BPlusTreePage *old_root_node) {
   buffer_pool_manager_->UnpinPage(old_root_node->GetPageId(), false);
   buffer_pool_manager_->UnpinPage(newRoot->GetPageId(), true);
   buffer_pool_manager_->DeletePage(old_root_node->GetPageId());
-  return false;
+  return true;
 }
 
 /*****************************************************************************

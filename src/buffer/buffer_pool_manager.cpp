@@ -134,6 +134,7 @@ bool BufferPoolManager::UnpinPageImpl(page_id_t page_id, bool is_dirty) {
   frame_id_t frameId = iter->second;
   Page *page = &pages_[frameId];
   if (page->pin_count_<=0){
+    assert(false);//禁止unpin多次
     return false;
   }
 
@@ -240,6 +241,7 @@ bool BufferPoolManager::DeletePageImpl(page_id_t page_id) {
   Page *page = &pages_[frameId];
   // 2.   If P exists, but has a non-zero pin-count, return false. Someone is using the page.
   if (page->pin_count_>0){
+    assert(false);
     return false;
   }
 
